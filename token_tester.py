@@ -1,8 +1,9 @@
-from openai import OpenAI
-
+import os
+import json
 import tiktoken
 import functools
 import time
+import settings  # noqa
 import string
 from functools import cache
 
@@ -64,13 +65,28 @@ def spelling_test(token: str) -> bool:
     return False    
 
 
+def write_unique_to_file(filepath: str, data: list[str]) -> None:
+    with open(filepath, 'w') as f:
+        for item in sorted(data):
+            f.write(f"{item}\n")
+
+
+def overwrite_file(filepath: str, data: str) -> None:
+    with open(filepath, 'w') as f:
+        f.write(data)
+
+
 def main():
-    num_tokens = 0
-    token_index = 98_000
     encoding = tiktoken.get_encoding("cl100k_base")
 
+    token_index = 98_000
     repetition_failures = []
     spelling_failures = []
+    if os.path.exists('results.json'):
+        existing_results = json.loads(open('results.json').read())
+        token_index = existing_results['token_index']
+        repetition_failures = existing_results['repetition_failures']
+        spelling_failures = existing_results['spelling_failures']
 
     while True:
         token = encoding.decode([token_index])
@@ -89,6 +105,12 @@ def main():
         if not spelling_test(token):
             spelling_failures.append(token)
 
+        with open('results.json', 'w') as f:
+            f.write(json.dumps({
+                'repetition_failures': repetition_failures,
+                'spelling_failures': spelling_failures,
+                'token_index': token_index,
+            }))
         token_index += 1
         if token_index % 100 == 0:
             print(f'Repetition failures: {repetition_failures}')
