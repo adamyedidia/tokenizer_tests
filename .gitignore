@@ -2,3 +2,4 @@ local_settings.py
 env
 __pycache__/
 results.json
+claude_results.json

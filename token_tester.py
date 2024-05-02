@@ -1,11 +1,13 @@
 import os
 import json
+from typing import Callable
 import tiktoken
 import functools
 import time
 import settings  # noqa
 import string
 from functools import cache
+import anthropic
 
 from functools import cache
 from langchain_openai import ChatOpenAI
@@ -18,6 +20,18 @@ def get_client(model: str, temperature: float) -> ChatOpenAI:
 
 def get_openai_response(prompt: str, model: str = 'gpt-4', temperature: float = 0.0) -> str:
     return  get_client(model=model, temperature=temperature).invoke(prompt).content
+
+
+def get_claude_response(prompt: str, max_tokens: int = 1024) -> str:
+    client = anthropic.Anthropic(api_key=settings.CLAUDE_SECRET_KEY)
+    return '\n'.join([message.text for message in client.messages.create(
+        model="claude-3-opus-20240229",
+        max_tokens=max_tokens,
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
+    ).content])
+
 
 def retryable(max_retries=3, delay=0.1):
     def decorator(func):
@@ -38,11 +52,11 @@ def retryable(max_retries=3, delay=0.1):
 
 
 @retryable()
-def repetition_test(token: str) -> bool:
+def repetition_test(token: str, get_ai_response: Callable[[str], str]) -> bool:
     DUMMY_TOKEN = 'Hello'
     string_to_repeat = f'{DUMMY_TOKEN}{token}'
 
-    response_content = get_openai_response(
+    response_content = get_ai_response(
         f"Please repeat the following string back to me exactly and in its entirety. "
         f"The string need not make sense. Here is the string: {string_to_repeat}")
 
@@ -53,10 +67,10 @@ def repetition_test(token: str) -> bool:
 
 
 @retryable()
-def spelling_test(token: str) -> bool:
+def spelling_test(token: str, get_ai_response: Callable[[str], str]) -> bool:
     spelled_string = '-'.join([c for c in token])
 
-    response_content = get_openai_response(
+    response_content = get_ai_response(
         f"Please spell out the following string exactly, with letters separated by '-' characters: {spelled_string}")
 
     if spelled_string in response_content or '-'.join([c for c in token if c != ' ']) in response_content:
@@ -100,9 +114,9 @@ def main():
             continue
 
         print(f'Testing {token} at index {token_index}...')
-        if not repetition_test(token):
+        if not repetition_test(token, get_openai_response):
             repetition_failures.append(token)
-        if not spelling_test(token):
+        if not spelling_test(token, get_openai_response):
             spelling_failures.append(token)
 
         with open('results.json', 'w') as f:
@@ -118,6 +132,32 @@ def main():
 
         if token_index > 100_000:
             break
+
+
+def test_claude():
+    if not os.path.exists('results.json'):
+        print('No results to work off')
+        return
+    existing_results = json.load(open('results.json'))
+    repetition_failures = existing_results['repetition_failures']
+    spelling_failures = existing_results['spelling_failures']
+    tokens = sorted(set(repetition_failures) | set(spelling_failures))
+    existing_claude_results = {}
+    if os.path.exists('claude_results.json'):
+        existing_claude_results = json.loads(open('claude_results.json').read())
+    untested_tokens = [t for t in tokens if t not in existing_claude_results]
+    while True:
+        if not untested_tokens:
+            break
+        token = untested_tokens.pop(0)
+        print(f'Testing {token}...')
+        existing_claude_results[token] = {
+            'failed_repetition':not repetition_test(token, get_claude_response),
+            'failed_spelling': not spelling_test(token, get_claude_response),
+        }
+        with open('claude_results.json', 'w') as f:
+            f.write(json.dumps(existing_claude_results))
+
 
 if __name__ == '__main__':
     main()

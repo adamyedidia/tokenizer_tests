@@ -1,3 +1,4 @@
+anthropic==0.25.7
+IPython==8.17.2
 langchain_openai==0.1.5
 tiktoken==0.6.0
-IPython==8.17.2
