@@ -1,9 +1,22 @@
-import openai
+from openai import OpenAI
+
 import tiktoken
 import functools
 import time
 import string
-from settings import OPENAI_SECRET_KEY
+from functools import cache
+
+from functools import cache
+from langchain_openai import ChatOpenAI
+
+
+@cache
+def get_client(model: str, temperature: float) -> ChatOpenAI:
+    return ChatOpenAI(model=model, temperature=temperature)
+
+
+def get_openai_response(prompt: str, model: str = 'gpt-4', temperature: float = 0.0) -> str:
+    return  get_client(model=model, temperature=temperature).invoke(prompt).content
 
 def retryable(max_retries=3, delay=0.1):
     def decorator(func):
@@ -25,17 +38,12 @@ def retryable(max_retries=3, delay=0.1):
 
 @retryable()
 def repetition_test(token: str) -> bool:
-    openai.api_key = OPENAI_SECRET_KEY
     DUMMY_TOKEN = 'Hello'
     string_to_repeat = f'{DUMMY_TOKEN}{token}'
 
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": f"Please repeat the following string back to me exactly and in its entirety. The string need not make sense. Here is the string: {string_to_repeat}"}],
-        temperature=0,
-    )
-
-    response_content = response['choices'][0]['message']['content']
+    response_content = get_openai_response(
+        f"Please repeat the following string back to me exactly and in its entirety. "
+        f"The string need not make sense. Here is the string: {string_to_repeat}")
 
     if string_to_repeat in response_content or f'{DUMMY_TOKEN} {token}' in response_content:
         return True
@@ -45,16 +53,10 @@ def repetition_test(token: str) -> bool:
 
 @retryable()
 def spelling_test(token: str) -> bool:
-    openai.api_key = OPENAI_SECRET_KEY
     spelled_string = '-'.join([c for c in token])
 
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": f"Please spell out the following string exactly, with letters separated by '-' characters: {spelled_string}"}],
-        temperature=0,
-    )
-
-    response_content = response['choices'][0]['message']['content']
+    response_content = get_openai_response(
+        f"Please spell out the following string exactly, with letters separated by '-' characters: {spelled_string}")
 
     if spelled_string in response_content or '-'.join([c for c in token if c != ' ']) in response_content:
         return True
